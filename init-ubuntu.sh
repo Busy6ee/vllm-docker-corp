@@ -60,8 +60,12 @@ _DETECTED_NO_PROXY="${NO_PROXY:-${no_proxy:-}}"
 
 # 감지된 프록시가 유효하지 않으면 무시
 if [[ -n "${_DETECTED_HTTP_PROXY}" ]] && ! validate_proxy_url "${_DETECTED_HTTP_PROXY}"; then
-    warn "환경변수의 프록시 값이 유효하지 않습니다: ${_DETECTED_HTTP_PROXY}"
+    warn "환경변수의 HTTP_PROXY 값이 유효하지 않습니다: ${_DETECTED_HTTP_PROXY}"
     _DETECTED_HTTP_PROXY=""
+fi
+if [[ -n "${_DETECTED_HTTPS_PROXY}" ]] && ! validate_proxy_url "${_DETECTED_HTTPS_PROXY}"; then
+    warn "환경변수의 HTTPS_PROXY 값이 유효하지 않습니다: ${_DETECTED_HTTPS_PROXY}"
+    _DETECTED_HTTPS_PROXY=""
 fi
 
 if [[ -n "${_DETECTED_HTTP_PROXY}" ]]; then
