@@ -30,6 +30,28 @@ warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
 # ============================================================
+# 포트 사용 확인 함수
+# ============================================================
+# 지정된 포트가 현재 LISTEN 상태인지 확인
+check_port_in_use() {
+    local port="$1"
+    if ss -tlnH "sport = :${port}" 2>/dev/null | grep -q LISTEN; then
+        return 0  # 사용 중
+    fi
+    return 1  # 미사용
+}
+
+# Head/Worker에서 사용할 포트 목록과 용도
+declare -A HEAD_PORTS=(
+    [6379]="Ray Head"
+    [8000]="vLLM API"
+    [11434]="Ollama"
+    [11435]="Nginx → vLLM"
+    [11436]="Nginx → Ollama"
+)
+WORKER_PORTS_LIST="6379"  # Worker는 Ray만 listen
+
+# ============================================================
 # 템플릿 치환 함수
 # ============================================================
 render_template() {
@@ -251,6 +273,62 @@ if $CONTAINER_PROXY_ENABLED; then
 else
     echo "  컨테이너 프록시: 없음"
 fi
+echo "============================================"
+
+# ============================================================
+# 로컬 포트 충돌 확인
+# ============================================================
+echo ""
+echo "--------------------------------------------"
+echo " 포트 사용 현황 (이 서버)"
+echo "--------------------------------------------"
+
+LOCAL_IPS=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^$')
+LOCAL_ROLE=""
+if echo "${LOCAL_IPS}" | grep -qxF "${INPUT_HEAD_IP}"; then
+    LOCAL_ROLE="head"
+elif [[ ${#WORKER_IPS[@]} -gt 0 ]]; then
+    for i in $(seq 0 $((${#WORKER_IPS[@]} - 1))); do
+        if echo "${LOCAL_IPS}" | grep -qxF "${WORKER_IPS[$i]}"; then
+            LOCAL_ROLE="worker-$((i + 1))"
+            break
+        fi
+    done
+fi
+
+PORT_CONFLICT=false
+if [[ "${LOCAL_ROLE}" == "head" ]]; then
+    info "이 서버 역할: Head (${INPUT_HEAD_IP})"
+    for port in $(echo "${!HEAD_PORTS[@]}" | tr ' ' '\n' | sort -n); do
+        if check_port_in_use "${port}"; then
+            warn "  포트 ${port} (${HEAD_PORTS[$port]}) — 이미 사용 중"
+            PORT_CONFLICT=true
+        else
+            ok "  포트 ${port} (${HEAD_PORTS[$port]}) — 사용 가능"
+        fi
+    done
+elif [[ "${LOCAL_ROLE}" == worker-* ]]; then
+    info "이 서버 역할: ${LOCAL_ROLE}"
+    # Worker는 Ray가 head에 join하므로 별도 listen 포트 없음
+    ok "  Worker는 별도 listen 포트 없음"
+else
+    warn "이 서버 IP가 클러스터 설정에 포함되지 않았습니다."
+    info "Head 포트 기준으로 확인합니다."
+    for port in $(echo "${!HEAD_PORTS[@]}" | tr ' ' '\n' | sort -n); do
+        if check_port_in_use "${port}"; then
+            warn "  포트 ${port} (${HEAD_PORTS[$port]}) — 이미 사용 중"
+            PORT_CONFLICT=true
+        else
+            ok "  포트 ${port} (${HEAD_PORTS[$port]}) — 사용 가능"
+        fi
+    done
+fi
+
+if $PORT_CONFLICT; then
+    echo ""
+    warn "충돌하는 포트가 있습니다. 기동 전에 해당 프로세스를 종료하세요."
+fi
+
 echo "============================================"
 read -rp "위 설정으로 파일을 생성하시겠습니까? [Y/n]: " confirm_gen
 if [[ "${confirm_gen,,}" == "n" ]]; then
