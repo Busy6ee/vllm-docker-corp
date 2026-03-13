@@ -1,0 +1,71 @@
+# ============================================================
+# Server 2 (Worker Node) — Ray Worker Only
+# ============================================================
+# 기동 순서: 이 서버를 먼저 시작 → Server 1 (Head) 나중
+# ============================================================
+
+x-common-env-file: &common_env_file
+  env_file:
+    - env.proxy
+
+x-common-locale-env: &common_locale_env
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  LANGUAGE: C.UTF-8
+
+services:
+  vllm-worker:
+    restart: unless-stopped
+    <<: *common_env_file
+    image: vllm/vllm-openai:latest
+    container_name: vllm-worker
+    network_mode: host
+    ipc: host
+    shm_size: "{{SHM_SIZE}}"
+    privileged: true
+
+    volumes:
+      - ${SSL_CERT_FILE}:${SSL_CERT_FILE}:ro
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ./data:/data
+
+    environment:
+      <<: *common_locale_env
+      # --- GPU ---
+      NVIDIA_VISIBLE_DEVICES: all
+      CUDA_VISIBLE_DEVICES: "{{CUDA_VISIBLE_DEVICES}}"
+      # --- NCCL ---
+      NCCL_SOCKET_IFNAME: "${NIC_NAME:-eth0}"
+      GLOO_SOCKET_IFNAME: "${NIC_NAME:-eth0}"
+      NCCL_IB_DISABLE: "${NCCL_IB_DISABLE:-1}"
+      NCCL_P2P_DISABLE: "0"
+      NCCL_DEBUG: "WARN"
+      NCCL_SOCKET_NTHREADS: "4"
+      NCCL_NSOCKS_PERTHREAD: "4"
+      NCCL_BUFFSIZE: "8388608"
+      # --- vLLM / Ray ---
+      VLLM_HOST_IP: "${WORKER_IP}"
+      HF_TOKEN: "${HF_TOKEN}"
+      OMP_NUM_THREADS: "1"
+
+    entrypoint: /bin/bash
+    command: >
+      -c "
+        echo '[Worker] Joining Ray cluster at ${HEAD_IP}:6379 ...'
+        ray start --address='${HEAD_IP}:6379' --block
+      "
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    healthcheck:
+      test: ["CMD-SHELL", "ray status >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s

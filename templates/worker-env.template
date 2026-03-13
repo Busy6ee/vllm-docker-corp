@@ -1,0 +1,17 @@
+# ============================================================
+# Server 2 (Worker Node) — .env
+# ============================================================
+
+# --- Hugging Face ---
+HF_TOKEN={{HF_TOKEN}}
+
+# --- Network ---
+HEAD_IP={{HEAD_IP}}
+WORKER_IP={{WORKER_IP}}
+NIC_NAME={{NIC_NAME}}
+
+# --- NCCL ---
+NCCL_IB_DISABLE={{NCCL_IB_DISABLE}}
+
+# --- SSL ---
+SSL_CERT_FILE={{SSL_CERT_FILE}}

@@ -1,0 +1,19 @@
+# ============================================================
+# Server 1 (Head Node) — .env
+# ============================================================
+
+# --- Hugging Face ---
+HF_TOKEN={{HF_TOKEN}}
+
+# --- vLLM API Key ---
+VLLM_API_KEY={{VLLM_API_KEY}}
+
+# --- Network ---
+HEAD_IP={{HEAD_IP}}
+NIC_NAME={{NIC_NAME}}
+
+# --- NCCL ---
+NCCL_IB_DISABLE={{NCCL_IB_DISABLE}}
+
+# --- SSL ---
+SSL_CERT_FILE={{SSL_CERT_FILE}}
