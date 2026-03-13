@@ -409,6 +409,8 @@ render_template \
 
 cp "${SCRIPT_DIR}/nginx.conf" "${HEAD_DIR}/nginx.conf"
 generate_env_proxy "${HEAD_DIR}"
+cp "${GENERATED_DIR}/cluster.conf" "${HEAD_DIR}/"
+cp "${SCRIPT_DIR}/up.sh" "${SCRIPT_DIR}/down.sh" "${SCRIPT_DIR}/_detect-role.sh" "${HEAD_DIR}/"
 ok "generated/head/ 생성 완료"
 
 # ============================================================
@@ -436,6 +438,8 @@ for i in $(seq 1 "${NUM_WORKERS}"); do
         "DATA_DIR=${INPUT_DATA_DIR}"
 
     generate_env_proxy "${WORKER_DIR}"
+    cp "${GENERATED_DIR}/cluster.conf" "${WORKER_DIR}/"
+    cp "${SCRIPT_DIR}/up.sh" "${SCRIPT_DIR}/down.sh" "${SCRIPT_DIR}/_detect-role.sh" "${WORKER_DIR}/"
     ok "generated/worker-${i}/ 생성 완료"
 done
 
@@ -448,12 +452,11 @@ echo " 파일 생성 완료"
 echo "============================================"
 echo ""
 echo "  ${GENERATED_DIR}/"
-echo "    cluster.conf"
 echo "    head/"
-echo "      .env, docker-compose.yml, nginx.conf, env.proxy"
+echo "      .env, docker-compose.yml, nginx.conf, env.proxy, cluster.conf, up.sh, down.sh, _detect-role.sh"
 for i in $(seq 1 "${NUM_WORKERS}"); do
     echo "    worker-${i}/"
-    echo "      .env, docker-compose.yml, env.proxy"
+    echo "      .env, docker-compose.yml, env.proxy, cluster.conf, up.sh, down.sh, _detect-role.sh"
 done
 echo ""
 
@@ -464,18 +467,14 @@ echo ""
 read -rp "각 서버에 파일을 배포하시겠습니까? [Y/n]: " confirm_deploy
 if [[ "${confirm_deploy,,}" == "n" ]]; then
     echo ""
-    echo "  수동 배포 명령어:"
+    echo "  수동 배포 명령어 (폴더 하나만 전달):"
     echo ""
     echo "  Head 서버 (${INPUT_HEAD_IP}):"
     echo "    scp -r generated/head/ ${INPUT_HEAD_IP}:<배포경로>/"
-    echo "    scp generated/cluster.conf ${INPUT_HEAD_IP}:<배포경로>/generated/"
-    echo "    scp up.sh down.sh _detect-role.sh ${INPUT_HEAD_IP}:<배포경로>/"
     echo ""
     for i in $(seq 1 "${NUM_WORKERS}"); do
         echo "  Worker-${i} 서버 (${WORKER_IPS[$((i-1))]}):"
         echo "    scp -r generated/worker-${i}/ ${WORKER_IPS[$((i-1))]}:<배포경로>/"
-        echo "    scp generated/cluster.conf ${WORKER_IPS[$((i-1))]}:<배포경로>/generated/"
-        echo "    scp up.sh down.sh _detect-role.sh ${WORKER_IPS[$((i-1))]}:<배포경로>/"
         echo ""
     done
     ok "generate 완료 (배포 생략)"
@@ -505,48 +504,27 @@ deploy_to_server() {
     local dest="${INPUT_DEPLOY_PATH}"
 
     if is_local_ip "${ip}"; then
-        # 로컬 서버 — cp 사용
         info "배포 중 (로컬): ${role} (${ip}) → ${dest}/"
 
-        mkdir -p "${dest}/generated" \
-            || { error "  디렉토리 생성 실패: ${dest}/generated"; DEPLOY_FAILED=true; return 1; }
+        mkdir -p "${dest}" \
+            || { error "  디렉토리 생성 실패: ${dest}"; DEPLOY_FAILED=true; return 1; }
 
-        cp -r "${src_dir}/." "${dest}/generated/${role}/" \
-            && ok "  ${role}/ 배포 완료" \
-            || { error "  ${role}/ 배포 실패"; DEPLOY_FAILED=true; return 1; }
-
-        cp "${GENERATED_DIR}/cluster.conf" "${dest}/generated/" \
-            && ok "  cluster.conf 배포 완료" \
-            || { error "  cluster.conf 배포 실패"; DEPLOY_FAILED=true; return 1; }
-
-        cp "${SCRIPT_DIR}/up.sh" "${SCRIPT_DIR}/down.sh" "${SCRIPT_DIR}/_detect-role.sh" \
-            "${dest}/" \
-            && ok "  스크립트 배포 완료" \
-            || { error "  스크립트 배포 실패"; DEPLOY_FAILED=true; return 1; }
+        cp -r "${src_dir}/." "${dest}/" \
+            && ok "  ${role} 배포 완료" \
+            || { error "  ${role} 배포 실패"; DEPLOY_FAILED=true; return 1; }
     else
-        # 원격 서버 — scp 사용
         local remote="${INPUT_SSH_USER}@${ip}"
         info "배포 중 (원격): ${role} (${ip}) → ${dest}/"
 
-        if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "${remote}" "mkdir -p ${dest}/generated" 2>/dev/null; then
+        if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "${remote}" "mkdir -p ${dest}" 2>/dev/null; then
             error "  SSH 연결 실패: ${remote}"
             DEPLOY_FAILED=true
             return 1
         fi
 
-        scp -r -o ConnectTimeout=10 "${src_dir}/" "${remote}:${dest}/generated/${role}/" 2>/dev/null \
-            && ok "  ${role}/ 배포 완료" \
-            || { error "  ${role}/ 배포 실패"; DEPLOY_FAILED=true; return 1; }
-
-        scp -o ConnectTimeout=10 "${GENERATED_DIR}/cluster.conf" "${remote}:${dest}/generated/" 2>/dev/null \
-            && ok "  cluster.conf 배포 완료" \
-            || { error "  cluster.conf 배포 실패"; DEPLOY_FAILED=true; return 1; }
-
-        scp -o ConnectTimeout=10 \
-            "${SCRIPT_DIR}/up.sh" "${SCRIPT_DIR}/down.sh" "${SCRIPT_DIR}/_detect-role.sh" \
-            "${remote}:${dest}/" 2>/dev/null \
-            && ok "  스크립트 배포 완료" \
-            || { error "  스크립트 배포 실패"; DEPLOY_FAILED=true; return 1; }
+        scp -r -o ConnectTimeout=10 "${src_dir}/." "${remote}:${dest}/" 2>/dev/null \
+            && ok "  ${role} 배포 완료" \
+            || { error "  ${role} 배포 실패"; DEPLOY_FAILED=true; return 1; }
     fi
 }
 

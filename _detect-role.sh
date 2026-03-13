@@ -8,10 +8,14 @@
 # ============================================================
 
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_CLUSTER_CONF="${_SCRIPT_DIR}/generated/cluster.conf"
 
-if [[ ! -f "${_CLUSTER_CONF}" ]]; then
-    echo -e "\033[0;31m[ERROR]\033[0m cluster.conf 를 찾을 수 없습니다: ${_CLUSTER_CONF}"
+# cluster.conf 탐색: 같은 디렉토리 → generated/ 하위 (하위 호환)
+if [[ -f "${_SCRIPT_DIR}/cluster.conf" ]]; then
+    _CLUSTER_CONF="${_SCRIPT_DIR}/cluster.conf"
+elif [[ -f "${_SCRIPT_DIR}/generated/cluster.conf" ]]; then
+    _CLUSTER_CONF="${_SCRIPT_DIR}/generated/cluster.conf"
+else
+    echo -e "\033[0;31m[ERROR]\033[0m cluster.conf 를 찾을 수 없습니다."
     echo "        먼저 generate.sh 를 실행하세요."
     exit 1
 fi
@@ -38,15 +42,29 @@ _ip_is_local() {
 ROLE_DIR=""
 ROLE_NAME=""
 
+# docker-compose.yml이 현재 디렉토리에 있으면 배포된 단일 폴더 구조
+_IS_DEPLOYED=false
+if [[ -f "${_SCRIPT_DIR}/docker-compose.yml" ]]; then
+    _IS_DEPLOYED=true
+fi
+
 if _ip_is_local "${HEAD_IP}"; then
-    ROLE_DIR="${_SCRIPT_DIR}/generated/head"
     ROLE_NAME="head"
+    if $_IS_DEPLOYED; then
+        ROLE_DIR="${_SCRIPT_DIR}"
+    else
+        ROLE_DIR="${_SCRIPT_DIR}/generated/head"
+    fi
 else
     for i in $(seq 1 "${WORKER_COUNT}"); do
         var="WORKER_${i}_IP"
         if _ip_is_local "${!var}"; then
-            ROLE_DIR="${_SCRIPT_DIR}/generated/worker-${i}"
             ROLE_NAME="worker-${i}"
+            if $_IS_DEPLOYED; then
+                ROLE_DIR="${_SCRIPT_DIR}"
+            else
+                ROLE_DIR="${_SCRIPT_DIR}/generated/worker-${i}"
+            fi
             break
         fi
     done
