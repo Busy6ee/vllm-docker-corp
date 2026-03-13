@@ -41,7 +41,31 @@ echo " Phase 1. 프록시 설정"
 echo "============================================"
 echo ""
 
-if [[ -n "${HTTP_PROXY:-}" ]]; then
+# 프록시 URL 유효성 검증
+validate_proxy_url() {
+    local url="$1"
+    if [[ -z "${url}" ]]; then
+        return 0  # 빈 값은 허용 (프록시 미사용)
+    fi
+    if [[ "${url}" =~ ^https?:// ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# 대소문자 환경변수 모두 확인
+_DETECTED_HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}"
+_DETECTED_HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-}}"
+_DETECTED_NO_PROXY="${NO_PROXY:-${no_proxy:-}}"
+
+# 감지된 프록시가 유효하지 않으면 무시
+if [[ -n "${_DETECTED_HTTP_PROXY}" ]] && ! validate_proxy_url "${_DETECTED_HTTP_PROXY}"; then
+    warn "환경변수의 프록시 값이 유효하지 않습니다: ${_DETECTED_HTTP_PROXY}"
+    _DETECTED_HTTP_PROXY=""
+fi
+
+if [[ -n "${_DETECTED_HTTP_PROXY}" ]]; then
+    HTTP_PROXY="${_DETECTED_HTTP_PROXY}"
     info "기존 HTTP_PROXY 감지: ${HTTP_PROXY}"
     read -rp "이 값을 사용하시겠습니까? [Y/n]: " use_existing
     if [[ "${use_existing,,}" == "n" ]]; then
@@ -51,14 +75,26 @@ else
     read -rp "HTTP_PROXY  (예: http://proxy.example.com:8080, 없으면 Enter): " HTTP_PROXY
 fi
 
-HTTPS_PROXY="${HTTPS_PROXY:-${HTTP_PROXY}}"
+# 입력된 값 검증
+if [[ -n "${HTTP_PROXY}" ]] && ! validate_proxy_url "${HTTP_PROXY}"; then
+    error "유효하지 않은 프록시 URL: ${HTTP_PROXY}"
+    error "http:// 또는 https:// 로 시작해야 합니다."
+    exit 1
+fi
+
+HTTPS_PROXY="${_DETECTED_HTTPS_PROXY:-${HTTP_PROXY}}"
 if [[ -n "${HTTP_PROXY}" ]]; then
     read -rp "HTTPS_PROXY [기본값: ${HTTPS_PROXY}]: " input
     HTTPS_PROXY="${input:-${HTTPS_PROXY}}"
+    if ! validate_proxy_url "${HTTPS_PROXY}"; then
+        error "유효하지 않은 프록시 URL: ${HTTPS_PROXY}"
+        exit 1
+    fi
 fi
 
 DEFAULT_NO_PROXY="localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local"
-if [[ -n "${NO_PROXY:-}" ]]; then
+if [[ -n "${_DETECTED_NO_PROXY}" ]]; then
+    NO_PROXY="${_DETECTED_NO_PROXY}"
     info "기존 NO_PROXY 감지: ${NO_PROXY}"
     read -rp "이 값을 사용하시겠습니까? [Y/n]: " use_existing_no
     if [[ "${use_existing_no,,}" == "n" ]]; then
@@ -74,6 +110,10 @@ fi
 PROXY_ENABLED=false
 if [[ -n "${HTTP_PROXY}" ]]; then
     PROXY_ENABLED=true
+    # 이후 curl 등 도구가 즉시 프록시를 사용할 수 있도록 선 적용
+    export http_proxy="${HTTP_PROXY}" HTTP_PROXY="${HTTP_PROXY}"
+    export https_proxy="${HTTPS_PROXY}" HTTPS_PROXY="${HTTPS_PROXY}"
+    export no_proxy="${NO_PROXY}" NO_PROXY="${NO_PROXY}"
 fi
 
 echo ""
