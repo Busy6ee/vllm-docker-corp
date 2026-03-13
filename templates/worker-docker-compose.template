@@ -27,7 +27,7 @@ services:
     volumes:
       - ${SSL_CERT_FILE}:${SSL_CERT_FILE}:ro
       - ~/.cache/huggingface:/root/.cache/huggingface
-      - ./data:/data
+      - {{DATA_DIR}}:/data
 
     environment:
       <<: *common_locale_env

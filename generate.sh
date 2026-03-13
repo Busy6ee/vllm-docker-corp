@@ -145,6 +145,9 @@ INPUT_NCCL_IB="${INPUT_NCCL_IB:-1}"
 read -rp "SSL_CERT_FILE [기본값: /etc/ssl/certs/ca-certificates.crt]: " INPUT_SSL_CERT
 INPUT_SSL_CERT="${INPUT_SSL_CERT:-/etc/ssl/certs/ca-certificates.crt}"
 
+read -rp "데이터 디렉토리 (모든 노드 공유 경로) [기본값: /mnt/nas]: " INPUT_DATA_DIR
+INPUT_DATA_DIR="${INPUT_DATA_DIR:-/mnt/nas}"
+
 # ############################################################
 #  GPU 설정
 # ############################################################
@@ -261,6 +264,7 @@ echo "  GPU/노드:        ${INPUT_GPU_PER_NODE}"
 echo "  전체 GPU:        ${TOTAL_GPU_COUNT}"
 echo "  CUDA_DEVICES:    ${CUDA_DEVICES}"
 echo "  SHM_SIZE:        ${INPUT_SHM_SIZE}"
+echo "  데이터 디렉토리: ${INPUT_DATA_DIR}"
 echo "  VLLM_API_KEY:    ${INPUT_VLLM_API_KEY:0:10}..."
 echo "  모델 ID:         ${INPUT_MODEL_ID}"
 echo "  서빙 이름:       ${INPUT_SERVED_NAME}"
@@ -377,7 +381,7 @@ ok "cluster.conf 생성"
 # Head
 # ============================================================
 HEAD_DIR="${GENERATED_DIR}/head"
-mkdir -p "${HEAD_DIR}/data"
+mkdir -p "${HEAD_DIR}"
 
 render_template \
     "${TEMPLATE_DIR}/head-env.template" \
@@ -400,7 +404,8 @@ render_template \
     "TENSOR_PARALLEL_SIZE=${INPUT_TP_SIZE}" \
     "PIPELINE_PARALLEL_SIZE=${INPUT_PP_SIZE}" \
     "GPU_MEMORY_UTILIZATION=${INPUT_GPU_MEM}" \
-    "MAX_MODEL_LEN=${INPUT_MAX_LEN}"
+    "MAX_MODEL_LEN=${INPUT_MAX_LEN}" \
+    "DATA_DIR=${INPUT_DATA_DIR}"
 
 cp "${SCRIPT_DIR}/nginx.conf" "${HEAD_DIR}/nginx.conf"
 generate_env_proxy "${HEAD_DIR}"
@@ -411,7 +416,7 @@ ok "generated/head/ 생성 완료"
 # ============================================================
 for i in $(seq 1 "${NUM_WORKERS}"); do
     WORKER_DIR="${GENERATED_DIR}/worker-${i}"
-    mkdir -p "${WORKER_DIR}/data"
+    mkdir -p "${WORKER_DIR}"
 
     render_template \
         "${TEMPLATE_DIR}/worker-env.template" \
@@ -427,7 +432,8 @@ for i in $(seq 1 "${NUM_WORKERS}"); do
         "${TEMPLATE_DIR}/worker-docker-compose.template" \
         "${WORKER_DIR}/docker-compose.yml" \
         "CUDA_VISIBLE_DEVICES=${CUDA_DEVICES}" \
-        "SHM_SIZE=${INPUT_SHM_SIZE}"
+        "SHM_SIZE=${INPUT_SHM_SIZE}" \
+        "DATA_DIR=${INPUT_DATA_DIR}"
 
     generate_env_proxy "${WORKER_DIR}"
     ok "generated/worker-${i}/ 생성 완료"
