@@ -145,7 +145,7 @@ EOF
     if [[ -n "${SUDO_USER_HOME}" && -d "${SUDO_USER_HOME}" ]]; then
         mkdir -p "${SUDO_USER_HOME}/.config/pip"
         cp /etc/pip/pip.conf "${SUDO_USER_HOME}/.config/pip/pip.conf"
-        chown -R "${SUDO_USER}:${SUDO_USER}" "${SUDO_USER_HOME}/.config/pip"
+        chown -R "${SUDO_USER}:$(id -gn "${SUDO_USER}")" "${SUDO_USER_HOME}/.config/pip"
     fi
     ok "pip 프록시 설정 완료"
 else
@@ -250,7 +250,7 @@ json.dump(cfg, sys.stdout, indent=2)
         USER_DOCKER_DIR="$(eval echo ~"${SUDO_USER}")/.docker"
         mkdir -p "${USER_DOCKER_DIR}"
         cp "${DOCKER_CONFIG_DIR}/config.json" "${USER_DOCKER_DIR}/config.json"
-        chown -R "${SUDO_USER}:${SUDO_USER}" "${USER_DOCKER_DIR}"
+        chown -R "${SUDO_USER}:$(id -gn "${SUDO_USER}")" "${USER_DOCKER_DIR}"
     fi
     systemctl daemon-reload
     systemctl restart docker
