@@ -458,24 +458,93 @@ done
 echo ""
 
 echo "--------------------------------------------"
-echo " 배포 안내"
+echo " 배포"
 echo "--------------------------------------------"
 echo ""
-echo "  각 서버에 해당 파일을 배포하세요:"
-echo ""
-echo "  Head 서버 (${INPUT_HEAD_IP}):"
-echo "    scp -r generated/head/ ${INPUT_HEAD_IP}:<배포경로>/"
-echo "    scp generated/cluster.conf ${INPUT_HEAD_IP}:<배포경로>/generated/"
-echo "    scp up.sh down.sh _detect-role.sh ${INPUT_HEAD_IP}:<배포경로>/"
-echo ""
-for i in $(seq 1 "${NUM_WORKERS}"); do
-    echo "  Worker-${i} 서버 (${WORKER_IPS[$((i-1))]}):"
-    echo "    scp -r generated/worker-${i}/ ${WORKER_IPS[$((i-1))]}:<배포경로>/"
-    echo "    scp generated/cluster.conf ${WORKER_IPS[$((i-1))]}:<배포경로>/generated/"
-    echo "    scp up.sh down.sh _detect-role.sh ${WORKER_IPS[$((i-1))]}:<배포경로>/"
+read -rp "각 서버에 파일을 배포하시겠습니까? [Y/n]: " confirm_deploy
+if [[ "${confirm_deploy,,}" == "n" ]]; then
     echo ""
+    echo "  수동 배포 명령어:"
+    echo ""
+    echo "  Head 서버 (${INPUT_HEAD_IP}):"
+    echo "    scp -r generated/head/ ${INPUT_HEAD_IP}:<배포경로>/"
+    echo "    scp generated/cluster.conf ${INPUT_HEAD_IP}:<배포경로>/generated/"
+    echo "    scp up.sh down.sh _detect-role.sh ${INPUT_HEAD_IP}:<배포경로>/"
+    echo ""
+    for i in $(seq 1 "${NUM_WORKERS}"); do
+        echo "  Worker-${i} 서버 (${WORKER_IPS[$((i-1))]}):"
+        echo "    scp -r generated/worker-${i}/ ${WORKER_IPS[$((i-1))]}:<배포경로>/"
+        echo "    scp generated/cluster.conf ${WORKER_IPS[$((i-1))]}:<배포경로>/generated/"
+        echo "    scp up.sh down.sh _detect-role.sh ${WORKER_IPS[$((i-1))]}:<배포경로>/"
+        echo ""
+    done
+    ok "generate 완료 (배포 생략)"
+    exit 0
+fi
+
+read -rp "원격 배포 경로 [기본값: ~/vllm-docker-corp]: " INPUT_DEPLOY_PATH
+INPUT_DEPLOY_PATH="${INPUT_DEPLOY_PATH:-~/vllm-docker-corp}"
+
+# SSH 사용자 (기본: 현재 사용자)
+read -rp "SSH 사용자 [기본값: $(whoami)]: " INPUT_SSH_USER
+INPUT_SSH_USER="${INPUT_SSH_USER:-$(whoami)}"
+
+DEPLOY_FAILED=false
+
+# --- 서버 배포 함수 ---
+deploy_to_server() {
+    local ip="$1"
+    local role="$2"       # head 또는 worker-N
+    local src_dir="$3"    # generated/head 또는 generated/worker-N
+
+    local remote="${INPUT_SSH_USER}@${ip}"
+    local dest="${INPUT_DEPLOY_PATH}"
+
+    info "배포 중: ${role} (${ip}) → ${dest}/"
+
+    # 원격 디렉토리 생성
+    if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "${remote}" "mkdir -p ${dest}/generated" 2>/dev/null; then
+        error "  SSH 연결 실패: ${remote}"
+        DEPLOY_FAILED=true
+        return 1
+    fi
+
+    # 설정 파일 배포 (role 디렉토리)
+    scp -r -o ConnectTimeout=10 "${src_dir}/" "${remote}:${dest}/generated/${role}/" 2>/dev/null \
+        && ok "  ${role}/ 배포 완료" \
+        || { error "  ${role}/ 배포 실패"; DEPLOY_FAILED=true; return 1; }
+
+    # cluster.conf 배포
+    scp -o ConnectTimeout=10 "${GENERATED_DIR}/cluster.conf" "${remote}:${dest}/generated/" 2>/dev/null \
+        && ok "  cluster.conf 배포 완료" \
+        || { error "  cluster.conf 배포 실패"; DEPLOY_FAILED=true; return 1; }
+
+    # 스크립트 배포
+    scp -o ConnectTimeout=10 \
+        "${SCRIPT_DIR}/up.sh" "${SCRIPT_DIR}/down.sh" "${SCRIPT_DIR}/_detect-role.sh" \
+        "${remote}:${dest}/" 2>/dev/null \
+        && ok "  스크립트 배포 완료" \
+        || { error "  스크립트 배포 실패"; DEPLOY_FAILED=true; return 1; }
+}
+
+echo ""
+
+# Head 배포
+deploy_to_server "${INPUT_HEAD_IP}" "head" "${HEAD_DIR}"
+
+# Worker 배포
+for i in $(seq 1 "${NUM_WORKERS}"); do
+    deploy_to_server "${WORKER_IPS[$((i-1))]}" "worker-${i}" "${GENERATED_DIR}/worker-${i}"
 done
 
+echo ""
+if $DEPLOY_FAILED; then
+    warn "일부 배포에 실패했습니다. 위 에러를 확인하세요."
+else
+    ok "모든 서버 배포 완료"
+fi
+
+echo ""
 echo "--------------------------------------------"
 echo " 기동 순서"
 echo "--------------------------------------------"
